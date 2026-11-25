@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 
-// Первый экран: золотой контур треугольника, удар печати, искры, остывающий металл.
+// Первый экран: лазер прорезает контур треугольника, удар печати, искры, остывающий металл.
 // Координаты треугольника в единицах mark-xl.webp (600 × 525), сняты с логотипа заведения.
 const A: [number, number] = [300, 16];
 const B: [number, number] = [591, 515];
@@ -35,7 +35,19 @@ function along(t: number) {
   return { x: A[0], y: A[1], nx: 0, ny: -1 };
 }
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+const easeSine = (t: number) => (1 - Math.cos(Math.PI * t)) / 2; // ровный ход лазера
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+
+// лазерный рез: широкое слабое свечение, к центру всё уже и ярче, сердцевина белая (ширина в px, цвет)
+const BEAM: [number, string][] = [
+  [26, "rgba(255,96,12,0.035)"],
+  [18, "rgba(255,110,20,0.05)"],
+  [11, "rgba(255,130,30,0.09)"],
+  [6, "rgba(255,150,50,0.17)"],
+  [2.8, "rgba(255,178,84,0.4)"],
+  [1.5, "rgba(255,220,150,0.8)"],
+  [0.8, "rgba(255,253,247,1)"],
+];
 
 type Spark = { x: number; y: number; vx: number; vy: number; life: number; max: number; w: number; ember?: boolean };
 type Puff = { x: number; y: number; vx: number; vy: number; r: number; life: number; max: number };
@@ -56,9 +68,6 @@ export function Forge() {
     const play = (sel: string, frames: Keyframe[], opt: KeyframeAnimationOptions) => anims.push($(sel).animate(frames, { fill: "both", ...opt }));
 
     // ---------- слои ----------
-    play(".forge-line", [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: DRAW, easing: "cubic-bezier(0.65,0,0.35,1)" });
-    play(".forge-line-glow", [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: DRAW, easing: "cubic-bezier(0.65,0,0.35,1)" });
-    play(".forge-contour", [{ opacity: 1 }, { opacity: 1, offset: 0.86 }, { opacity: 0 }], { duration: HIT + 260 });
     // печать: замах и резкий удар
     play(
       ".forge-mark",
@@ -102,8 +111,9 @@ export function Forge() {
     play(".forge-word-hot", [{ opacity: 1 }, { opacity: 0.9, offset: 0.25 }, { opacity: 0 }], { delay: WORD, duration: 2700, easing: "ease-out", fill: "backwards" });
 
     // ---------- canvas ----------
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     const box = canvas.getBoundingClientRect();
+    const small = box.width < 700;
+    const dpr = Math.min(window.devicePixelRatio || 1, small ? 2 : 1.5); // тонкой линии на телефоне нужна чёткость
     const stage = $(".forge-tri").getBoundingClientRect();
     canvas.width = Math.round(box.width * dpr);
     canvas.height = Math.round(box.height * dpr);
@@ -111,7 +121,6 @@ export function Forge() {
     const k = stage.width / 600;
     const ox = stage.left - box.left;
     const oy = stage.top - box.top;
-    const small = box.width < 700;
     const sparks: Spark[] = [];
     const puffs: Puff[] = [];
 
@@ -130,6 +139,42 @@ export function Forge() {
       const v = rnd(v0, v1);
       const life = rnd(l0, l1);
       sparks.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life, max: life, w: rnd(0.5, 1) * w });
+    };
+    // линия реза от t0 до t1 вдоль контура
+    const cut = (from: number, to: number, power: number) => {
+      ctx.beginPath();
+      const a = along(from);
+      ctx.moveTo(ox + a.x * k, oy + a.y * k);
+      let d = 0;
+      for (let i = 0; i < 3; i++) {
+        d += LEN[i] / TOTAL;
+        if (d > from && d < to - 1e-4) ctx.lineTo(ox + EDGES[i][1][0] * k, oy + EDGES[i][1][1] * k);
+      }
+      if (from === 0 && to >= 1) ctx.closePath();
+      else {
+        const b = along(to);
+        ctx.lineTo(ox + b.x * k, oy + b.y * k);
+      }
+      ctx.globalCompositeOperation = "lighter";
+      ctx.lineCap = "round";
+      ctx.lineJoin = "miter";
+      ctx.globalAlpha = power;
+      for (const [w, color] of BEAM) {
+        ctx.lineWidth = w;
+        ctx.strokeStyle = color;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    };
+    // вытянутый блик на точке реза
+    const streak = (x: number, y: number, len: number, w: number, alpha: number, vertical: boolean) => {
+      const g = vertical ? ctx.createLinearGradient(x, y - len, x, y + len) : ctx.createLinearGradient(x - len, y, x + len, y);
+      g.addColorStop(0, "rgba(255,170,80,0)");
+      g.addColorStop(0.5, `rgba(255,246,226,${alpha})`);
+      g.addColorStop(1, "rgba(255,170,80,0)");
+      ctx.fillStyle = g;
+      if (vertical) ctx.fillRect(x - w / 2, y - len, w, len * 2);
+      else ctx.fillRect(x - len, y - w / 2, len * 2, w);
     };
     const burst = () => {
       const n = small ? 280 : 520;
@@ -161,22 +206,41 @@ export function Forge() {
       last = now;
       ctx.clearRect(0, 0, box.width, box.height);
 
-      // искры с кончика, который чертит контур
+      // лазер: линия держится до удара и гаснет под падающей печатью
+      const done = easeSine(Math.min(1, t / DRAW));
+      const power = Math.min(1, (HIT + 20 - t) / 150);
+      if (power > 0) {
+        cut(0, done, power);
+        if (t < DRAW) {
+          // свежий участок за точкой реза ещё раскалён
+          cut(Math.max(0, done - 0.035), done, 0.5);
+          cut(Math.max(0, done - 0.012), done, 0.6);
+        } else cut(0, 1, power * 0.8 * Math.max(0, 1 - (t - DRAW) / 320)); // контур замкнулся: вспышка
+      }
       if (t < DRAW) {
-        const p = along(easeInOut(t / DRAW));
-        acc += dt * (small ? 70 : 110);
+        const p = along(done);
+        const x = ox + p.x * k;
+        const y = oy + p.y * k;
+        // искры бьют назад, против хода лазера
+        const back = Math.atan2(-p.nx, p.ny);
+        acc += dt * (small ? 110 : 170);
         while (acc > 1) {
           acc--;
-          emit(ox + p.x * k, oy + p.y * k, rnd(0, Math.PI * 2), 0, 20, 190, 0.18, 0.55, 1.1);
+          const wild = Math.random() < 0.25;
+          emit(x, y, back, wild ? 1.5 : 0.42, 60, wild ? 220 : 430, 0.14, 0.5, 0.95);
         }
-        const r = 46 * k + 14;
-        const g = ctx.createRadialGradient(ox + p.x * k, oy + p.y * k, 0, ox + p.x * k, oy + p.y * k, r);
-        g.addColorStop(0, "rgba(255,240,210,0.95)");
-        g.addColorStop(0.14, "rgba(255,200,120,0.55)");
-        g.addColorStop(1, "rgba(255,130,30,0)");
+        const flick = rnd(0.86, 1);
+        const r = (small ? 22 : 34) * flick;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, "rgba(255,255,250,1)");
+        g.addColorStop(0.08, "rgba(255,244,214,0.95)");
+        g.addColorStop(0.2, "rgba(255,180,84,0.34)");
+        g.addColorStop(1, "rgba(255,110,20,0)");
         ctx.globalCompositeOperation = "lighter";
         ctx.fillStyle = g;
-        ctx.fillRect(ox + p.x * k - r, oy + p.y * k - r, r * 2, r * 2);
+        ctx.fillRect(x - r, y - r, r * 2, r * 2);
+        streak(x, y, r * 2.3, 1.2, 0.9 * flick, false);
+        streak(x, y, r * 1.1, 1, 0.6 * flick, true);
       }
       if (!hit && t >= HIT) {
         hit = true;
@@ -282,18 +346,6 @@ export function Forge() {
         <button type="button" className="forge-stage" onClick={run} aria-label="Main Place. Показать анимацию ещё раз">
           <span className="forge-tri">
             <span className="forge-scorch" />
-            <svg className="forge-contour" viewBox="0 0 600 525" aria-hidden="true">
-              <defs>
-                <linearGradient id="fgold" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" stopColor="#f6d9a8" />
-                  <stop offset="0.35" stopColor="#c98f52" />
-                  <stop offset="0.6" stopColor="#ffe6bd" />
-                  <stop offset="1" stopColor="#a56c35" />
-                </linearGradient>
-              </defs>
-              <path className="forge-line-glow" pathLength={1} d="M300 34 L575 506 L25 506 Z" />
-              <path className="forge-line" pathLength={1} d="M300 34 L575 506 L25 506 Z" />
-            </svg>
             <span className="forge-shade" />
             <span className="forge-mark">
               {/* eslint-disable-next-line @next/next/no-img-element -- нужен ровно этот файл, он же служит маской */}

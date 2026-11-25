@@ -699,26 +699,6 @@ html[data-js] [data-rv="crack"]:not([data-in]) .crack-near {
   position: absolute;
   inset: 0;
 }
-.forge-contour {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-.forge-contour path {
-  fill: none;
-  stroke-linejoin: miter;
-  stroke-dasharray: 1;
-}
-.forge-line {
-  stroke: url(#fgold);
-  stroke-width: 18;
-}
-.forge-line-glow {
-  stroke: #ffb35c;
-  stroke-width: 26;
-  opacity: 0.55;
-  filter: blur(12px);
-}
 .forge-mark img,
 .forge-word img {
   width: 100%;
@@ -770,20 +750,13 @@ html[data-js] [data-rv="crack"]:not([data-in]) .crack-near {
   background: radial-gradient(70% 60% at 50% 46%, rgb(255 214 158 / 0.95), rgb(255 140 50 / 0.35) 50%, transparent 85%);
 }
 html[data-js] .forge:not([data-on]) .forge-mark,
-html[data-js] .forge:not([data-on]) .forge-word,
-html[data-js] .forge:not([data-on]) .forge-contour {
+html[data-js] .forge:not([data-on]) .forge-word {
   opacity: 0;
-}
-html:not([data-js]) .forge-contour {
-  display: none;
 }
 @media (prefers-reduced-motion: reduce) {
   html[data-js] .forge .forge-mark,
   html[data-js] .forge .forge-word {
     opacity: 1 !important;
-  }
-  .forge-contour {
-    display: none;
   }
 }
 @media (max-width: 819px) {
